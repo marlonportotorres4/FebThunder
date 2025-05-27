@@ -149,7 +149,7 @@ void introScreen() {
   }
   image(introVideo, 0, 0, width, height);
   
-  if (introVideo.time() >= introVideo.duration() - 0.2) {
+  if (introVideo.time() >= introVideo.duration() - 0.01) {
     currentScreen = Screen.START;
     introVideo.pause();
     
