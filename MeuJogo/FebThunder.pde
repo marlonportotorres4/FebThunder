@@ -1,229 +1,244 @@
-
-
+import java.util.HashSet;
 // ===================== BIBLIOTECAS =====================
-import ddf.minim.*;  // Para controle de áudio
+import ddf.minim.*;
+import java.util.Collections;
+import java.util.Iterator;
 
 // ===================== VARIÁVEIS GLOBAIS =====================
-// Sistema de áudio
+enum Screen { START, GAME, CREDITS, HIGHSCORES }
+Screen currentScreen = Screen.START;
+
+// Elementos de áudio
 Minim minim;
-AudioPlayer shootSound, playerDeathSound, enemyDeathSound, music;
+AudioPlayer shootSound, playerDeathSound, enemyDeathSound, music, coinCollectSound;
 
 // Assets gráficos
-PImage bg;                  // Imagem de fundo
-PImage playerImg;           // Sprite do jogador
-PImage[] enemies = new PImage[4];   // Sprites dos 4 tipos de inimigos
-PImage[] explosionFrames = new PImage[7];  // Frames de explosão
-PImage[] bulletFrames = new PImage[13];    // Frames de animação do tiro
-PImage coinImg;             // Sprite da moeda
+PImage bg, playerImg, coinImg, logoFeb, creditsBg, highscoresBg;
+PImage[] enemies = new PImage[4];
+PImage[] explosionFrames = new PImage[7];
+PImage[] bulletFrames = new PImage[13];
 
-// Listas de entidades
-ArrayList<Bullet> bullets = new ArrayList<Bullet>();     // Tiros ativos
-ArrayList<Enemy> enemiesList = new ArrayList<Enemy>();   // Inimigos ativos
-ArrayList<Coin> coins = new ArrayList<Coin>();           // Moedas coletáveis
-ArrayList<Explosion> explosions = new ArrayList<Explosion>(); // Explosões
+// Entidades
+ArrayList<Bullet> bullets = new ArrayList<Bullet>();
+ArrayList<Enemy> enemiesList = new ArrayList<Enemy>();
+ArrayList<Coin> coins = new ArrayList<Coin>();
+ArrayList<Explosion> explosions = new ArrayList<Explosion>();
 
 // Estado do jogo
-Player player;      // Objeto do jogador
-int score = 0;      // Pontuação
-boolean gameOver = false; // Controle de fim de jogo
+Player player;
+int score = 0;
+boolean gameOver = false;
+int lastEnemySpawn = 0;
+
+// UI
+Button startBtn, creditsBtn, highscoresBtn;
+ArrayList<Integer> highScores = new ArrayList<Integer>();
+PFont gameFont, titleFont;
+color uiColor = #00FF88;
 
 // ===================== CONFIGURAÇÃO INICIAL =====================
 void setup() {
-  size(1280, 720, P2D);  // Tamanho inicial com aceleração gráfica
-  frameRate(60);         // FPS fixo
-  surface.setResizable(true);  // Permite redimensionar janela
+  size(1280, 720, P2D);
+  frameRate(60);
+  surface.setResizable(true);
   
-  // Carrega background e redimensiona
+  // Carregamento de assets
   bg = loadImage("data/backgrounds/sky.jpg");
-  bg.resize(width, height);  // Ajusta ao tamanho da janela
+  bg.resize(width, height);
+  creditsBg = loadImage("data/backgrounds/credits_bg.jpg");
+  creditsBg.resize(width, height);
+  highscoresBg = loadImage("data/backgrounds/highscores_bg.jpg");
+  highscoresBg.resize(width, height);
   
-  // Carrega sprites do jogador
   playerImg = loadImage("data/sprites/player/player.png");
+  logoFeb = loadImage("data/logo/logoFeb.png");
   
-  // Carrega sprites dos inimigos (4 tipos)
   for(int i = 0; i < 4; i++) {
     enemies[i] = loadImage("data/sprites/enemies/enemy"+(i+1)+".png");
   }
   
-  // Carrega spritesheet de tiros (13 frames)
   PImage bulletSheet = loadImage("data/sprites/bullets/shoots.png");
   int bulletWidth = bulletSheet.width / 13;
+  int bulletHeight = bulletSheet.height;
   for(int i = 0; i < 13; i++) {
-    bulletFrames[i] = bulletSheet.get(i * bulletWidth, 0, bulletWidth, bulletSheet.height);
+    bulletFrames[i] = bulletSheet.get(i * bulletWidth, 0, bulletWidth, bulletHeight);
   }
   
-  // Carrega sprite da moeda
   coinImg = loadImage("data/sprites/coin/coin.png");
   
-  // Carrega spritesheet de explosão (7 frames)
   PImage explosionSheet = loadImage("data/sprites/explosions/explosions.png");
   int explosionWidth = explosionSheet.width / 7;
   for(int i = 0; i < 7; i++) {
     explosionFrames[i] = explosionSheet.get(i * explosionWidth, 0, explosionWidth, explosionSheet.height);
   }
 
-  // Configura áudio
+  // Configuração de áudio
   minim = new Minim(this);
   shootSound = minim.loadFile("data/sounds/shoot.wav");
   playerDeathSound = minim.loadFile("data/sounds/playerDeath.wav");
   enemyDeathSound = minim.loadFile("data/sounds/enemyDeath.wav");
   music = minim.loadFile("data/sounds/music_loop.wav");
-  music.loop();  // Inicia música
+  coinCollectSound = minim.loadFile("data/sounds/coinCollect.wav");
   
-  player = new Player();  // Cria o jogador
+  // Inicialização do jogador
+  player = new Player();
+  
+  // Configuração da UI
+  gameFont = createFont("Arial Bold", 28);
+  titleFont = createFont("Impact", 72);
+  textFont(gameFont);
+  
+  int btnWidth = 300;
+  int btnHeight = 60;
+  int btnYStart = height/2;
+  
+  startBtn = new Button("Iniciar Jogo", width/2 - btnWidth/2, btnYStart, btnWidth, btnHeight);
+  creditsBtn = new Button("Créditos", width/2 - btnWidth/2, btnYStart + 100, btnWidth, btnHeight);
+  highscoresBtn = new Button("Recordes", width/2 - btnWidth/2, btnYStart + 200, btnWidth, btnHeight);
+  
+  loadHighScores();
+  music.loop();
 }
 
 // ===================== LOOP PRINCIPAL =====================
 void draw() {
+  switch(currentScreen) {
+    case START: startScreen(); break;
+    case GAME: gameScreen(); break;
+    case CREDITS: creditsScreen(); break;
+    case HIGHSCORES: highScoresScreen(); break;
+  }
+}
+
+// ===================== TELAS =====================
+void startScreen() {
+  background(bg);
+  imageMode(CENTER);
+  image(logoFeb, width/2, height/4, logoFeb.width * 0.8, logoFeb.height * 0.8);
+  
+  startBtn.display();
+  creditsBtn.display();
+  highscoresBtn.display();
+}
+
+void gameScreen() {
   if(gameOver) {
     gameOverScreen();
-    return;  // Pausa o jogo
+    return;
   }
   
-  // Atualiza fundo
-  background(0);  // Limpa artefatos gráficos
-  imageMode(CORNER);
-  image(bg, 0, 0, width, height);  // Desenha fundo
-  
-  // Atualiza entidades
+  background(bg);
   player.update();
   player.display();
   
-  // Gerencia sistemas
-  handleEnemies();    // Inimigos
-  handleBullets();    // Tiros
-  handleCoins();      // Moedas
-  handleExplosions(); // Explosões
-  checkCollisions();  // Colisões
+  handleEnemies();
+  handleBullets();
+  handleCoins();
+  handleExplosions();
+  checkCollisions();
   
-  // Desenha UI
+  // UI
+  fill(0, 180);
+  noStroke();
+  rect(15, 15, 240, 90, 10);
+  fill(uiColor);
+  textSize(28);
+  textAlign(LEFT, TOP);
+  text("SCORE: " + score, 30, 30);
+  text("VIDA: " + player.health, 30, 70);
+  stroke(uiColor);
+  noFill();
+  strokeWeight(3);
+  rect(15, 15, 240, 90, 10);
+}
+
+void creditsScreen() {
+  background(creditsBg);
+  textFont(titleFont);
+  fill(#FFD700);
+  textAlign(CENTER, TOP);
+  text("Créditos", width/2, 50);
+  
+  textFont(gameFont);
   fill(255);
-  textSize(24);
-  text("Score: " + score, 20, 40);
-  text("Health: " + player.health, 20, 80);
-}
-
-// ===================== FUNÇÕES DE GERENCIAMENTO =====================
-// --- Controla inimigos ---
-void handleEnemies() {
-  // Spawn a cada 2 segundos (60 FPS * 120 frames)
-  if(frameCount % 120 == 0) {
-    enemiesList.add(new Enemy());
-  }
+  textSize(32);
+  text("Desenvolvedora: Lógica de Amigação", width/2, 180);
+  text("Integrantes:", width/2, 240);
+  text("Marlon Torres", width/2, 300);
+  text("Nivaldo Arruda", width/2, 360);
+  text("Kaian Guthierry", width/2, 420);
   
-  // Atualiza e remove inimigos fora da tela
-  for(int i = enemiesList.size()-1; i >= 0; i--) {
-    Enemy e = enemiesList.get(i);
-    e.update();
-    e.display();
-    
-    if(e.pos.x < -100) {
-      enemiesList.remove(i);
-    }
-  }
+  startBtn.label = "Voltar";
+  startBtn.y = height - 120;
+  startBtn.display();
 }
 
-// --- Controla tiros ---
-void handleBullets() {
-  for(int i = bullets.size()-1; i >= 0; i--) {
-    Bullet b = bullets.get(i);
-    b.update();
-    b.display();
-    
-    if(b.pos.x > width) {
-      bullets.remove(i);
-    }
-  }
-}
-
-// --- Controla moedas ---
-void handleCoins() {
-  // Spawn a cada 3 segundos (60 FPS * 180 frames)
-  if(frameCount % 180 == 0) {
-    coins.add(new Coin());
-  }
+void highScoresScreen() {
+  background(highscoresBg);
+  textFont(titleFont);
+  fill(#FFD700);
+  textAlign(CENTER, TOP);
+  text("Recordes", width/2, 50);
   
-  // Atualiza e remove moedas
-  for(int i = coins.size()-1; i >= 0; i--) {
-    Coin c = coins.get(i);
-    c.update();
-    c.display();
-    
-    if(c.pos.x < -50) {
-      coins.remove(i);
-    }
-  }
-}
-
-// --- Controla explosões ---
-void handleExplosions() {
-  for(int i = explosions.size()-1; i >= 0; i--) {
-    Explosion ex = explosions.get(i);
-    ex.update();
-    ex.display();
-    
-    if(ex.finished) {
-      explosions.remove(i);
-    }
-  }
-}
-
-// --- Verifica colisões ---
-void checkCollisions() {
-  // Colisão bala-inimigo
-  for(int i = bullets.size()-1; i >= 0; i--) {
-    Bullet b = bullets.get(i);
-    for(int j = enemiesList.size()-1; j >= 0; j--) {
-      Enemy e = enemiesList.get(j);
-      if(dist(b.pos.x, b.pos.y, e.pos.x, e.pos.y) < 50) {
-        explosions.add(new Explosion(e.pos.x, e.pos.y));
-        enemyDeathSound.rewind();
-        enemyDeathSound.play();
-        bullets.remove(i);
-        enemiesList.remove(j);
-        score += 100;
-        break;
-      }
-    }
-  }
-  
-  // Colisão jogador-moeda
-  for(int i = coins.size()-1; i >= 0; i--) {
-    Coin c = coins.get(i);
-    if(dist(player.pos.x, player.pos.y, c.pos.x, c.pos.y) < 40) {
-      coins.remove(i);
-      score += 50;
-    }
-  }
-  
-  // Colisão jogador-inimigo
-  for(int i = enemiesList.size()-1; i >= 0; i--) {
-    Enemy e = enemiesList.get(i);
-    if(dist(player.pos.x, player.pos.y, e.pos.x, e.pos.y) < 50) {
-      player.health -= 20;
-      explosions.add(new Explosion(e.pos.x, e.pos.y));
-      enemiesList.remove(i);
-      
-      if(player.health <= 0) {
-        gameOver = true;
-        playerDeathSound.play();
-        music.pause();
-      }
-    }
-  }
-}
-
-// ===================== TELA DE GAME OVER =====================
-void gameOverScreen() {
-  fill(255, 0, 0);
-  textSize(72);
-  textAlign(CENTER, CENTER);
-  text("GAME OVER", width/2, height/2);
+  textFont(gameFont);
+  fill(255);
   textSize(36);
-  text("Score: " + score, width/2, height/2 + 60);
+  int y = 180;
+  for(int i = 0; i < highScores.size(); i++) {
+    text((i+1) + ". " + nf(highScores.get(i), 5), width/2, y);
+    y += 60;
+  }
+  
+  startBtn.label = "Voltar";
+  startBtn.y = height - 120;
+  startBtn.display();
 }
 
-// ===================== CONTROLES DO TECLADO =====================
+void gameOverScreen() {
+  fill(0, 150);
+  rect(0, 0, width, height);
+  fill(#FF0000);
+  textFont(titleFont);
+  textAlign(CENTER, CENTER);
+  text("FIM DE JOGO", width/2, height/2 - 50);
+  textFont(gameFont);
+  fill(255);
+  text("Pontuação: " + score, width/2, height/2 + 30);
+  
+  startBtn.label = "Menu Principal";
+  startBtn.y = height - 150;
+  startBtn.display();
+  saveHighScore();
+}
+
+// ===================== CONTROLES =====================
+void mousePressed() {
+  if(currentScreen == Screen.START) {
+    if(startBtn.isMouseOver()) {
+      currentScreen = Screen.GAME;
+      resetGame();
+    }
+    if(creditsBtn.isMouseOver()) currentScreen = Screen.CREDITS;
+    if(highscoresBtn.isMouseOver()) currentScreen = Screen.HIGHSCORES;
+  }
+  else if(currentScreen == Screen.CREDITS || currentScreen == Screen.HIGHSCORES) {
+    if(startBtn.isMouseOver()) {
+      currentScreen = Screen.START;
+      resetButtons();
+    }
+  }
+  else if(currentScreen == Screen.GAME && gameOver) {
+    if(startBtn.isMouseOver()) {
+      currentScreen = Screen.START;
+      gameOver = false;
+      resetGame();
+      resetButtons();
+      music.rewind();
+      music.play();
+    }
+  }
+}
+
 void keyPressed() {
   if(keyCode == UP) player.moveUp = true;
   if(keyCode == DOWN) player.moveDown = true;
@@ -239,68 +254,84 @@ void keyReleased() {
   if(keyCode == RIGHT) player.moveRight = false;
 }
 
-// ===================== CLASSE JOGADOR =====================
+void resetButtons() {
+  startBtn.label = "Iniciar Jogo";
+  startBtn.y = height/2;
+  creditsBtn.y = height/2 + 100;
+  highscoresBtn.y = height/2 + 200;
+}
+
+// ===================== CLASSES =====================
+class Button {
+  String label;
+  float x, y, w, h;
+  
+  Button(String label, float x, float y, float w, float h) {
+    this.label = label;
+    this.x = x;
+    this.y = y;
+    this.w = w;
+    this.h = h;
+  }
+  
+  void display() {
+    fill(isMouseOver() ? #6464C8 : #323296);
+    stroke(255);
+    rect(x, y, w, h, 10);
+    fill(255);
+    textSize(24);
+    textAlign(CENTER, CENTER);
+    text(label, x + w/2, y + h/2);
+  }
+  
+  boolean isMouseOver() {
+    return mouseX > x && mouseX < x + w && mouseY > y && mouseY < y + h;
+  }
+}
+
 class Player {
-  PVector pos = new PVector(100, height/2); // Posição inicial
-  float speed = 5;       // Velocidade
-  int health = 100;      // Vida
-  boolean moveUp, moveDown, moveLeft, moveRight; // Estados de movimento
+  PVector pos = new PVector(100, height/2);
+  float speed = 5;
+  int health = 100;
+  boolean moveUp, moveDown, moveLeft, moveRight;
+  int shootCooldown = 0;
 
   void update() {
-    // Movimentação
     if(moveUp) pos.y -= speed;
     if(moveDown) pos.y += speed;
     if(moveLeft) pos.x -= speed;
     if(moveRight) pos.x += speed;
     
-    // Limites da tela
     pos.x = constrain(pos.x, 0, width-80);
     pos.y = constrain(pos.y, 0, height-80);
+    
+    if(shootCooldown > 0) shootCooldown--;
+  }
+  
+  void shoot() {
+    if(shootCooldown <= 0) {
+      bullets.add(new Bullet(pos.x + 80, pos.y + 40));
+      shootSound.rewind();
+      shootSound.play();
+      shootCooldown = 15;
+    }
   }
   
   void display() {
-    // Desenho com rotação
     pushMatrix();
-    translate(pos.x + 40, pos.y + 40); // Centraliza
-    rotate(HALF_PI); // Rotação 90°
+    translate(pos.x + 40, pos.y + 40);
+    rotate(HALF_PI);
     imageMode(CENTER);
     image(playerImg, 0, 0, 80, 80);
     popMatrix();
   }
-  
-  void shoot() {
-    bullets.add(new Bullet(pos.x + 80, pos.y + 40)); // Cria tiro
-    shootSound.rewind();
-    shootSound.play();
-  }
 }
 
-// ===================== CLASSE INIMIGO =====================
-class Enemy {
-  PVector pos = new PVector(width + 100, random(100, height-100)); // Spawn fora da tela
-  int type = (int)random(4);  // Tipo aleatório
-  float speed = random(2, 4); // Velocidade variável
-
-  void update() {
-    pos.x -= speed; // Move para esquerda
-  }
-  
-  void display() {
-    pushMatrix();
-    translate(pos.x + 40, pos.y + 40); // Centraliza
-    rotate(-HALF_PI); // Rotação -90°
-    imageMode(CENTER);
-    image(enemies[type], 0, 0, 80, 80);
-    popMatrix();
-  }
-}
-
-// ===================== CLASSE TIRO =====================
 class Bullet {
   PVector pos;
-  float speed = 10;     // Velocidade fixa
-  int frame = 0;        // Frame atual
-  int lastUpdate = 0;   // Timer animação
+  float speed = 10;
+  int frame = 0;
+  int lastUpdate = 0;
 
   Bullet(float x, float y) {
     pos = new PVector(x, y);
@@ -308,8 +339,7 @@ class Bullet {
   }
   
   void update() {
-    pos.x += speed; // Move para direita
-    // Atualiza frame a cada 50ms
+    pos.x += speed;
     if(millis() - lastUpdate > 50) {
       frame = (frame + 1) % 13;
       lastUpdate = millis();
@@ -319,33 +349,46 @@ class Bullet {
   void display() {
     pushMatrix();
     translate(pos.x, pos.y);
-    rotate(HALF_PI); // Alinha animação
     imageMode(CENTER);
-    image(bulletFrames[frame], 0, 0, 40, 40);
+    image(bulletFrames[frame], 0, 0, 150, 50);
     popMatrix();
   }
 }
 
-// ===================== CLASSE MOEDA =====================
-class Coin {
-  PVector pos = new PVector(width + 50, random(100, height-100)); // Spawn fora da tela
-  float speed = 3; // Velocidade fixa
+class Enemy {
+  PVector pos = new PVector(width + 100, random(100, height-100));
+  int type = (int)random(4);
+  float speed = map(type, 0, 3, 2, 5);
+  int health = 1;
 
-  void update() {
-    pos.x -= speed; // Move para esquerda
-  }
+  void update() { pos.x -= speed; }
   
   void display() {
-    image(coinImg, pos.x, pos.y, 30, 30); // Desenha moeda
+    pushMatrix();
+    translate(pos.x + 40, pos.y + 40);
+    rotate(-HALF_PI);
+    imageMode(CENTER);
+    image(enemies[type], 0, 0, 80, 80);
+    popMatrix();
   }
 }
 
-// ===================== CLASSE EXPLOSÃO =====================
+class Coin {
+  PVector pos = new PVector(width + 50, random(100, height-100));
+  float speed = 3;
+
+  void update() { pos.x -= speed; }
+  
+  void display() {
+    image(coinImg, pos.x, pos.y, 30, 30);
+  }
+}
+
 class Explosion {
   PVector pos;
-  int frame = 0;        // Frame atual
-  int lastUpdate = 0;   // Timer animação
-  boolean finished = false; // Estado
+  int frame = 0;
+  int lastUpdate = 0;
+  boolean finished = false;
 
   Explosion(float x, float y) {
     pos = new PVector(x, y);
@@ -353,7 +396,6 @@ class Explosion {
   }
   
   void update() {
-    // Avança frame a cada 50ms
     if(millis() - lastUpdate > 50) {
       frame++;
       lastUpdate = millis();
@@ -362,8 +404,169 @@ class Explosion {
   }
   
   void display() {
-    if(!finished) {
-      image(explosionFrames[frame], pos.x-50, pos.y-50, 100, 100);
+    if(!finished) image(explosionFrames[frame], pos.x-0, pos.y-0, 80, 80);
+  }
+}
+
+// ===================== LÓGICA DO JOGO =====================
+void resetGame() {
+  gameOver = false;
+  player.health = 100;
+  score = 0;
+  bullets.clear();
+  enemiesList.clear();
+  coins.clear();
+  explosions.clear();
+  player.pos.set(100, height/2);
+  music.rewind();
+  music.loop();
+}
+
+
+// ===================== CORREÇÃO DE HIGHSCORES =====================
+void loadHighScores() {
+  String[] scores = loadStrings("highscores.txt");
+  highScores.clear();
+  
+  if(scores != null) {
+    for(String s : scores) {
+      int scoreValue = Integer.parseInt(s.trim());
+      if (!highScores.contains(scoreValue)) {
+        highScores.add(scoreValue);
+      }
+    }
+    Collections.sort(highScores, Collections.reverseOrder());
+    
+    // Garantir máximo de 5 scores
+    while(highScores.size() > 5) {
+      highScores.remove(highScores.size() - 1);
+    }
+  } else {
+    // Valores padrão únicos
+    int[] defaultScores = {1500, 1200, 900, 700, 500};
+    for(int s : defaultScores) {
+      highScores.add(s);
+    }
+  }
+}
+
+void saveHighScore() {
+  // Adicionar apenas se for maior que o menor score
+  int minScore = highScores.size() > 0 ? highScores.get(highScores.size()-1) : 0;
+  if(score > minScore || highScores.size() < 5) {
+    highScores.add(score);
+    Collections.sort(highScores, Collections.reverseOrder());
+    
+    // Remover duplicatas
+    HashSet<Integer> uniqueScores = new HashSet<>(highScores);
+    highScores.clear();
+    highScores.addAll(uniqueScores);
+    Collections.sort(highScores, Collections.reverseOrder());
+    
+    // Manter apenas top 5
+    while(highScores.size() > 5) {
+      highScores.remove(highScores.size()-1);
+    }
+    
+    // Salvar arquivo
+    String[] scores = new String[highScores.size()];
+    for(int i=0; i<highScores.size(); i++) {
+      scores[i] = str(highScores.get(i));
+    }
+    saveStrings("highscores.txt", scores);
+  }
+}
+
+void handleEnemies() {
+  if (millis() - lastEnemySpawn > 1000) {
+    enemiesList.add(new Enemy());
+    lastEnemySpawn = millis();
+  }
+  
+  Iterator<Enemy> enemyIterator = enemiesList.iterator();
+  while (enemyIterator.hasNext()) {
+    Enemy e = enemyIterator.next();
+    e.update();
+    e.display();
+    
+    if (e.pos.x < -100) {
+      player.health -= 20;
+      explosions.add(new Explosion(0, e.pos.y));
+      enemyDeathSound.rewind();
+      enemyDeathSound.play();
+      enemyIterator.remove();
+      
+      if (player.health <= 0) {
+        gameOver = true;
+        playerDeathSound.rewind();
+        playerDeathSound.play();
+        explosions.add(new Explosion(player.pos.x + 40, player.pos.y + 40));
+        music.pause();
+      }
+    }
+  }
+}
+
+void handleBullets() {
+  Iterator<Bullet> bulletIterator = bullets.iterator();
+  while (bulletIterator.hasNext()) {
+    Bullet b = bulletIterator.next();
+    b.update();
+    b.display();
+    if (b.pos.x > width + 100) bulletIterator.remove();
+  }
+}
+
+void handleCoins() {
+  if (frameCount % 300 == 0) coins.add(new Coin());
+  
+  Iterator<Coin> coinIterator = coins.iterator();
+  while (coinIterator.hasNext()) {
+    Coin c = coinIterator.next();
+    c.update();
+    c.display();
+    if (c.pos.x < -50) coinIterator.remove();
+  }
+}
+
+void handleExplosions() {
+  Iterator<Explosion> explosionIterator = explosions.iterator();
+  while (explosionIterator.hasNext()) {
+    Explosion exp = explosionIterator.next();
+    exp.update();
+    exp.display();
+    if (exp.finished) explosionIterator.remove();
+  }
+}
+
+void checkCollisions() {
+  Iterator<Bullet> bulletIterator = bullets.iterator();
+  while (bulletIterator.hasNext()) {
+    Bullet b = bulletIterator.next();
+    Iterator<Enemy> enemyIterator = enemiesList.iterator();
+    while (enemyIterator.hasNext()) {
+      Enemy e = enemyIterator.next();
+      if (dist(b.pos.x, b.pos.y, e.pos.x + 40, e.pos.y + 40) < 40) {
+        explosions.add(new Explosion(e.pos.x, e.pos.y));
+        enemyIterator.remove();
+        bulletIterator.remove();
+        score += 100;
+        enemyDeathSound.rewind();
+        enemyDeathSound.play();
+        break;
+      }
+    }
+  }
+  
+  Iterator<Coin> coinIterator = coins.iterator();
+  while (coinIterator.hasNext()) {
+    Coin c = coinIterator.next();
+    if (dist(player.pos.x + 40, player.pos.y + 40, c.pos.x + 15, c.pos.y + 15) < 30) {
+      coinIterator.remove();
+      score += 50;
+      coinCollectSound.rewind();
+      coinCollectSound.play();
+      break;
     }
   }
 }
