@@ -1,16 +1,24 @@
+// ===================== Imports =====================
 import java.util.HashSet;
-// ===================== BIBLIOTECAS =====================
 import ddf.minim.*;
 import java.util.Collections;
 import java.util.Iterator;
+import processing.video.*;
 
 // ===================== VARIÁVEIS GLOBAIS =====================
-enum Screen { START, GAME, CREDITS, HIGHSCORES }
-Screen currentScreen = Screen.START;
+enum Screen { INTRO, START, STORY, GAME, CREDITS, HIGHSCORES }
+Screen currentScreen = Screen.INTRO;
 
+Movie introVideo;
+boolean videoFinished = false;
+int videoEndTime = 0;
+
+Button continueBtn;
+String storyText = "Prepare-se para o combate, O LEGADO DA NAÇÃO BRASILEIRA DEPENDE DE VOCÊ!\nDestrua o máximo de aeronaves fascistas que conseguir e não deixe nenhum inimigo passar pelas nossas linhas de defesa.";
 // Elementos de áudio
 Minim minim;
 AudioPlayer shootSound, playerDeathSound, enemyDeathSound, music, coinCollectSound;
+boolean musicStarted = false;
 
 // Assets gráficos
 PImage bg, playerImg, coinImg, logoFeb, creditsBg, highscoresBg;
@@ -33,7 +41,7 @@ int lastEnemySpawn = 0;
 // UI
 Button startBtn, creditsBtn, highscoresBtn;
 ArrayList<Integer> highScores = new ArrayList<Integer>();
-PFont gameFont, titleFont;
+PFont pixelFont;
 color uiColor = #00FF88;
 
 // ===================== CONFIGURAÇÃO INICIAL =====================
@@ -84,9 +92,9 @@ void setup() {
   player = new Player();
   
   // Configuração da UI
-  gameFont = createFont("Arial Bold", 28);
-  titleFont = createFont("Impact", 72);
-  textFont(gameFont);
+  pixelFont = createFont("data/fonts/PressStart2P.ttf", 28);
+  textFont(pixelFont);
+  
   
   int btnWidth = 300;
   int btnHeight = 60;
@@ -97,13 +105,36 @@ void setup() {
   highscoresBtn = new Button("Recordes", width/2 - btnWidth/2, btnYStart + 200, btnWidth, btnHeight);
   
   loadHighScores();
-  music.loop();
+  //music.loop();
+  
+  introVideo = new Movie(this, sketchPath("data/videos/logo_intro.mp4"));
+  introVideo.play();
+}
+
+void movieEvent(Movie m) {
+  if (m == introVideo) {
+    m.read();
+    // Força redesenho imediato
+    redraw();
+  }
+}
+
+void playIntro() {
+  image(introVideo, 0, 0, width, height);
+  if (introVideo.duration() == introVideo.time()) {
+    if (!videoFinished) {
+      videoFinished = true;
+      videoEndTime = millis();
+    }
+  }
 }
 
 // ===================== LOOP PRINCIPAL =====================
 void draw() {
   switch(currentScreen) {
+    case INTRO: introScreen(); break;
     case START: startScreen(); break;
+    case STORY: storyScreen(); break;
     case GAME: gameScreen(); break;
     case CREDITS: creditsScreen(); break;
     case HIGHSCORES: highScoresScreen(); break;
@@ -111,10 +142,31 @@ void draw() {
 }
 
 // ===================== TELAS =====================
+
+void introScreen() {
+  if (introVideo.available()) {
+    introVideo.read();
+  }
+  image(introVideo, 0, 0, width, height);
+  
+  if (introVideo.time() >= introVideo.duration() - 0.2) {
+    currentScreen = Screen.START;
+    introVideo.pause();
+    
+    // Inicia a música apenas uma vez
+    if (!musicStarted) {
+      music.loop();
+      musicStarted = true;
+    }
+  }
+}
+
 void startScreen() {
   background(bg);
   imageMode(CENTER);
   image(logoFeb, width/2, height/4, logoFeb.width * 0.8, logoFeb.height * 0.8);
+  textFont(pixelFont);
+  textSize(32);
   
   startBtn.display();
   creditsBtn.display();
@@ -142,9 +194,9 @@ void gameScreen() {
   noStroke();
   rect(15, 15, 240, 90, 10);
   fill(uiColor);
-  textSize(28);
+  textSize(18);
   textAlign(LEFT, TOP);
-  text("SCORE: " + score, 30, 30);
+  text("PONTOS: " + score, 30, 30);
   text("VIDA: " + player.health, 30, 70);
   stroke(uiColor);
   noFill();
@@ -152,14 +204,49 @@ void gameScreen() {
   rect(15, 15, 240, 90, 10);
 }
 
+void storyScreen() {
+  background(bg);
+  
+  // Balão de texto
+  float balloonW = width * 0.7;
+  float balloonH = height * 0.5;
+  float balloonX = width/2 - balloonW/2;
+  float balloonY = height/2 - balloonH/2;
+  
+  // Corpo do balão
+  fill(255);
+  stroke(0);
+  strokeWeight(2);
+  rect(balloonX, balloonY, balloonW, balloonH, 20);
+  
+  // Triângulo inferior
+  float triangleY = balloonY + balloonH;
+  beginShape();
+  vertex(width/2 - 30, triangleY);
+  vertex(width/2, triangleY + 40);
+  vertex(width/2 + 30, triangleY);
+  endShape(CLOSE);
+  
+  // Texto
+  fill(0);
+  textSize(28);
+  textAlign(CENTER, CENTER);
+  text(storyText, balloonX + 40, balloonY + 40, balloonW - 80, balloonH - 80);
+  
+  // Botão Continuar
+  continueBtn = new Button("Continuar", width/2 - 100, balloonY + balloonH + 60, 200, 50);
+  continueBtn.display();
+}
+
 void creditsScreen() {
   background(creditsBg);
-  textFont(titleFont);
+  textFont(pixelFont);
+  textSize(35);
   fill(#FFD700);
   textAlign(CENTER, TOP);
   text("Créditos", width/2, 50);
   
-  textFont(gameFont);
+  
   fill(255);
   textSize(32);
   text("Desenvolvedora: Lógica de Amigação", width/2, 180);
@@ -175,12 +262,13 @@ void creditsScreen() {
 
 void highScoresScreen() {
   background(highscoresBg);
-  textFont(titleFont);
+  textFont(pixelFont);
+  textSize(35);
   fill(#FFD700);
   textAlign(CENTER, TOP);
   text("Recordes", width/2, 50);
   
-  textFont(gameFont);
+  
   fill(255);
   textSize(36);
   int y = 180;
@@ -198,10 +286,9 @@ void gameOverScreen() {
   fill(0, 150);
   rect(0, 0, width, height);
   fill(#FF0000);
-  textFont(titleFont);
+  textFont(pixelFont);
   textAlign(CENTER, CENTER);
   text("FIM DE JOGO", width/2, height/2 - 50);
-  textFont(gameFont);
   fill(255);
   text("Pontuação: " + score, width/2, height/2 + 30);
   
@@ -215,11 +302,16 @@ void gameOverScreen() {
 void mousePressed() {
   if(currentScreen == Screen.START) {
     if(startBtn.isMouseOver()) {
-      currentScreen = Screen.GAME;
+      currentScreen = Screen.STORY; // Muda para tela de história
       resetGame();
     }
     if(creditsBtn.isMouseOver()) currentScreen = Screen.CREDITS;
     if(highscoresBtn.isMouseOver()) currentScreen = Screen.HIGHSCORES;
+  }
+   else if(currentScreen == Screen.STORY) {
+    if(continueBtn.isMouseOver()) {
+      currentScreen = Screen.GAME;
+    }
   }
   else if(currentScreen == Screen.CREDITS || currentScreen == Screen.HIGHSCORES) {
     if(startBtn.isMouseOver()) {
@@ -279,7 +371,8 @@ class Button {
     stroke(255);
     rect(x, y, w, h, 10);
     fill(255);
-    textSize(24);
+    textFont(pixelFont);
+    textSize(20);
     textAlign(CENTER, CENTER);
     text(label, x + w/2, y + h/2);
   }
@@ -420,6 +513,25 @@ void resetGame() {
   player.pos.set(100, height/2);
   music.rewind();
   music.loop();
+  if (currentScreen == Screen.INTRO) {
+    introVideo.jump(0); // Reinicia para início
+    introVideo.play();
+  }
+  musicStarted = true;
+  if (!music.isPlaying()) {
+    music.rewind();
+    music.play();
+  }
+  if(currentScreen == Screen.STORY) {
+    gameOver = false;
+    player.health = 100;
+    score = 0;
+    bullets.clear();
+    enemiesList.clear();
+    coins.clear();
+    explosions.clear();
+    player.pos.set(100, height/2);
+  }
 }
 
 
@@ -563,10 +675,42 @@ void checkCollisions() {
     Coin c = coinIterator.next();
     if (dist(player.pos.x + 40, player.pos.y + 40, c.pos.x + 15, c.pos.y + 15) < 30) {
       coinIterator.remove();
-      score += 50;
+      score += 200;
       coinCollectSound.rewind();
       coinCollectSound.play();
       break;
     }
   }
+
+// Nova verificação de colisão entre player e inimigos
+  Iterator<Enemy> enemyCollisionIterator = enemiesList.iterator();
+  while (enemyCollisionIterator.hasNext()) {
+    Enemy e = enemyCollisionIterator.next();
+    // Calcula distância entre centros do player e inimigo
+    float distance = dist(
+        player.pos.x + 40,  // Centro X do player
+        player.pos.y + 40,  // Centro Y do player
+        e.pos.x + 40,       // Centro X do inimigo
+        e.pos.y + 40        // Centro Y do inimigo
+    );
+
+    // Colisão ocorre se a distância for menor que a soma dos raios (40 + 40)
+    if (distance < 80) {
+        explosions.add(new Explosion(e.pos.x, e.pos.y));
+        enemyCollisionIterator.remove();
+        enemyDeathSound.rewind();
+        enemyDeathSound.play();
+        player.health -= 20; // Dano ao player
+        
+        // Verifica morte do player
+        if (player.health <= 0) {
+            gameOver = true;
+            playerDeathSound.rewind();
+            playerDeathSound.play();
+            explosions.add(new Explosion(player.pos.x + 40, player.pos.y + 40));
+            music.pause();
+        }
+    }
+}
+
 }
